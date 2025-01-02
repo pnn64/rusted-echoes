@@ -10,7 +10,7 @@ use log::{error, info, LevelFilter};
 use rand::thread_rng;
 use rand::Rng;
 use cgmath::{ortho, Matrix, Matrix4, Vector3};
-use std::ffi::{CString};
+use std::ffi::CString;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::{Instant, Duration};
@@ -64,11 +64,10 @@ struct Character {
     direction: Direction,
     /// A HashMap of (Direction, Part) -> texture_id
     textures: std::collections::HashMap<(Direction, Part), u32>,
-    /// We’ll track time to do “simple animation” if you want multiple frames, but for now,
-    /// each direction has a unique Head/Body. You can expand frames if needed.
+    /// We’ll track time to do “simple animation” if desired (toggle frames).
     last_frame_time: Instant,
     frame_duration: Duration,
-    current_frame: usize, // We can keep a simple 2-frame toggle if you like
+    current_frame: usize,
 }
 
 impl Character {
@@ -148,7 +147,6 @@ impl Character {
 
     /// Return the texture for the head and body based on the current direction.
     fn get_textures(&self) -> Option<(u32, u32)> {
-        // Our scheme: For each direction, we have a HEAD tile and a BODY tile.
         let head_key = (self.direction, Part::Head);
         let body_key = (self.direction, Part::Body);
         let head_tex = self.textures.get(&head_key).cloned();
@@ -433,15 +431,14 @@ fn main() {
     let mut additional_textures = Vec::new();
     for (i, &tile_data) in TILE_MAPPINGS.iter().enumerate() {
         let name = TILE_NAMES[i];
-        if name.starts_with("RANDI") || name == "TILE_TILE53" {
+        // We skip only Randi. Any "TILE_TILE53" check is gone now.
+        if name.starts_with("RANDI") {
             continue;
         }
         let pixels = generate_tile_pixels(tile_data);
         let texture = unsafe { create_texture(&pixels) };
         additional_textures.push(texture);
     }
-
-    // Tile size is already defined as TILE_SIZE
 
     // Calculate how many tiles fit
     let tiles_x_init = (size.width as f32 / TILE_SIZE).ceil() as usize;
@@ -456,18 +453,17 @@ fn main() {
     let mut character = Character::new(
         (center_x, center_y),
         randi_texture_map,
-        Duration::from_millis(200), // Frame toggle time (for your animation if desired)
+        Duration::from_millis(200),
     );
 
     // Additional random tiles
     let mut rng = thread_rng();
     let mut extra_tiles = Vec::new();
-    for &tile_data in TILE_MAPPINGS {
-        let name = TILE_NAMES.iter().find(|&&n| n == "TILE_TILE53");
-        // Assuming TILE_MAPPINGS and TILE_NAMES are correctly defined
+    // Randomize all additional textures
+    for &tex in &additional_textures {
         let x = rng.gen_range(0.0..(size.width as f32 - TILE_SIZE));
         let y = rng.gen_range(0.0..(size.height as f32 - TILE_SIZE));
-        extra_tiles.push(Tile::new(tile_data[0][0] as u32, (x, y)));
+        extra_tiles.push(Tile::new(tex, (x, y)));
     }
     let extra_tiles_ref = Rc::new(RefCell::new(extra_tiles));
 
@@ -543,12 +539,12 @@ fn main() {
         gl::EnableVertexAttribArray(1);
     }
 
-    // Log which tiles we loaded
+    // Log which tiles we loaded (excluding Randi)
     info!(
-        "Tiles loaded (excluding Randi + tile53): {:?}",
+        "Tiles loaded (excluding Randi): {:?}",
         TILE_NAMES
             .iter()
-            .filter(|&&n| !n.starts_with("RANDI") && n != "TILE_TILE53")
+            .filter(|&&n| !n.starts_with("RANDI"))
             .copied()
             .collect::<Vec<&str>>()
     );
@@ -746,4 +742,3 @@ fn main() {
         }
     });
 }
-
