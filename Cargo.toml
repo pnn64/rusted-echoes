@@ -1,0 +1,17 @@
+[package]
+name = "rusted-echoes"
+version = "0.1.1"
+edition = "2021"
+authors = ["Patrik Nilsson <perfecttaste@pm.me>"]
+description = "An experimental RPG engine, inspired by Secret of Mana."
+repository = "https://github.com/pnn64/rusted-echoes"
+license = "MIT"
+keywords = ["rusted-echoes", "secret-of-mana", "mana", "game-engine", "rust", "experimental"]
+
+[dependencies]
+glutin = "0.29"
+gl = "0.14"
+log = "0.4"
+env_logger = "0.9"
+cgmath = "0.18"
+rand = "0.8"
