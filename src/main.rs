@@ -335,7 +335,7 @@ fn main() {
 
     // Create window
     let window_builder = WindowBuilder::new()
-        .with_title("Secret Of Mana Clone (Directional + Smooth Movement)")
+        .with_title("Rusted Echoes")
         .with_inner_size(glutin::dpi::LogicalSize::new(800.0, 600.0));
 
     // Build GL context
@@ -366,10 +366,36 @@ fn main() {
     // Create shader program
     let shader_program = unsafe { link_program(VERT_SHADER_SRC, FRAG_SHADER_SRC) };
 
-    // Prepare background + stone textures
+    // Cache uniform names and locations
+    let projection_uniform = CString::new("projection").unwrap();
+    let model_uniform = CString::new("model").unwrap();
+    let tile_texture_uniform = CString::new("tileTexture").unwrap();
+
+    unsafe {
+        gl::UseProgram(shader_program);
+
+        // Set projection matrix
+        let proj_loc = gl::GetUniformLocation(shader_program, projection_uniform.as_ptr());
+        gl::UniformMatrix4fv(
+            proj_loc,
+            1,
+            gl::FALSE,
+            ortho(0.0, size.width as f32, 0.0, size.height as f32, -1.0, 1.0).as_ptr(),
+        );
+
+        // Set tile texture sampler to texture unit 0
+        let tile_tex_loc = gl::GetUniformLocation(shader_program, tile_texture_uniform.as_ptr());
+        gl::Uniform1i(tile_tex_loc, 0); // GL_TEXTURE0
+    }
+
+    // Define TILE_SIZE
+    const TILE_SIZE: f32 = 32.0;
+
+    // Prepare textures (grass, stone, Randi, etc.)
     let grass_pixels = generate_tile_pixels(&TILE_TILE54);
-    let stone_pixels = generate_tile_pixels(&TILE_TILE96);
     let grass_texture = unsafe { create_texture(&grass_pixels) };
+
+    let stone_pixels = generate_tile_pixels(&TILE_TILE96);
     let stone_texture = unsafe { create_texture(&stone_pixels) };
 
     // Prepare Randi’s directional textures
@@ -415,8 +441,7 @@ fn main() {
         additional_textures.push(texture);
     }
 
-    // Tile size
-    const TILE_SIZE: f32 = 32.0;
+    // Tile size is already defined as TILE_SIZE
 
     // Calculate how many tiles fit
     let tiles_x_init = (size.width as f32 / TILE_SIZE).ceil() as usize;
@@ -437,10 +462,12 @@ fn main() {
     // Additional random tiles
     let mut rng = thread_rng();
     let mut extra_tiles = Vec::new();
-    for &texture in &additional_textures {
+    for &tile_data in TILE_MAPPINGS {
+        let name = TILE_NAMES.iter().find(|&&n| n == "TILE_TILE53");
+        // Assuming TILE_MAPPINGS and TILE_NAMES are correctly defined
         let x = rng.gen_range(0.0..(size.width as f32 - TILE_SIZE));
         let y = rng.gen_range(0.0..(size.height as f32 - TILE_SIZE));
-        extra_tiles.push(Tile::new(texture, (x, y)));
+        extra_tiles.push(Tile::new(tile_data[0][0] as u32, (x, y)));
     }
     let extra_tiles_ref = Rc::new(RefCell::new(extra_tiles));
 
@@ -486,7 +513,12 @@ fn main() {
             0.0, TILE_SIZE, 0.0, 0.0,
         ];
         let size_bytes = (vertices.len() * std::mem::size_of::<f32>()) as isize;
-        gl::BufferData(gl::ARRAY_BUFFER, size_bytes, vertices.as_ptr() as *const _, gl::STATIC_DRAW);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            size_bytes,
+            vertices.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
 
         // position attribute
         gl::VertexAttribPointer(
@@ -522,18 +554,6 @@ fn main() {
     );
 
     info!("OpenGL program linked. Starting main loop...");
-
-    // Orthographic projection
-    let projection = ortho(0.0, size.width as f32, 0.0, size.height as f32, -1.0, 1.0);
-    let proj_cstr = CString::new("projection").unwrap();
-    let proj_loc = unsafe {
-        gl::UseProgram(shader_program);
-        gl::GetUniformLocation(shader_program, proj_cstr.as_ptr())
-    };
-    unsafe {
-        gl::UseProgram(shader_program);
-        gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.as_ptr());
-    }
 
     // Track time for smooth movement
     let mut last_frame_time = Instant::now();
@@ -573,11 +593,13 @@ fn main() {
                         let pos_x = tx as f32 * TILE_SIZE;
                         let pos_y = ty as f32 * TILE_SIZE;
                         let model = Matrix4::from_translation(Vector3::new(pos_x, pos_y, 0.0));
-                        let model_loc = unsafe {
-                            gl::GetUniformLocation(shader_program, CString::new("model").unwrap().as_ptr())
-                        };
                         unsafe {
-                            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
+                            gl::UniformMatrix4fv(
+                                gl::GetUniformLocation(shader_program, model_uniform.as_ptr()),
+                                1,
+                                gl::FALSE,
+                                model.as_ptr(),
+                            );
                             gl::DrawArrays(gl::TRIANGLES, 0, 6);
                         }
                     }
@@ -588,13 +610,14 @@ fn main() {
                     unsafe {
                         gl::BindTexture(gl::TEXTURE_2D, stone.texture);
                     }
-                    let model =
-                        Matrix4::from_translation(Vector3::new(stone.position.0, stone.position.1, 0.0));
-                    let model_loc = unsafe {
-                        gl::GetUniformLocation(shader_program, CString::new("model").unwrap().as_ptr())
-                    };
+                    let model = Matrix4::from_translation(Vector3::new(stone.position.0, stone.position.1, 0.0));
                     unsafe {
-                        gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
+                        gl::UniformMatrix4fv(
+                            gl::GetUniformLocation(shader_program, model_uniform.as_ptr()),
+                            1,
+                            gl::FALSE,
+                            model.as_ptr(),
+                        );
                         gl::DrawArrays(gl::TRIANGLES, 0, 6);
                     }
                 }
@@ -604,13 +627,14 @@ fn main() {
                     unsafe {
                         gl::BindTexture(gl::TEXTURE_2D, tile.texture);
                     }
-                    let model =
-                        Matrix4::from_translation(Vector3::new(tile.position.0, tile.position.1, 0.0));
-                    let model_loc = unsafe {
-                        gl::GetUniformLocation(shader_program, CString::new("model").unwrap().as_ptr())
-                    };
+                    let model = Matrix4::from_translation(Vector3::new(tile.position.0, tile.position.1, 0.0));
                     unsafe {
-                        gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.as_ptr());
+                        gl::UniformMatrix4fv(
+                            gl::GetUniformLocation(shader_program, model_uniform.as_ptr()),
+                            1,
+                            gl::FALSE,
+                            model.as_ptr(),
+                        );
                         gl::DrawArrays(gl::TRIANGLES, 0, 6);
                     }
                 }
@@ -630,12 +654,15 @@ fn main() {
                     unsafe {
                         gl::BindTexture(gl::TEXTURE_2D, body_tex);
                     }
-                    let model_body = Matrix4::from_translation(Vector3::new(character.position.0, character.position.1, 0.0));
-                    let model_loc_body = unsafe {
-                        gl::GetUniformLocation(shader_program, CString::new("model").unwrap().as_ptr())
-                    };
+                    let model_body =
+                        Matrix4::from_translation(Vector3::new(character.position.0, character.position.1, 0.0));
                     unsafe {
-                        gl::UniformMatrix4fv(model_loc_body, 1, gl::FALSE, model_body.as_ptr());
+                        gl::UniformMatrix4fv(
+                            gl::GetUniformLocation(shader_program, model_uniform.as_ptr()),
+                            1,
+                            gl::FALSE,
+                            model_body.as_ptr(),
+                        );
                         gl::DrawArrays(gl::TRIANGLES, 0, 6);
                     }
 
@@ -649,7 +676,12 @@ fn main() {
                         0.0,
                     ));
                     unsafe {
-                        gl::UniformMatrix4fv(model_loc_body, 1, gl::FALSE, model_head.as_ptr());
+                        gl::UniformMatrix4fv(
+                            gl::GetUniformLocation(shader_program, model_uniform.as_ptr()),
+                            1,
+                            gl::FALSE,
+                            model_head.as_ptr(),
+                        );
                         gl::DrawArrays(gl::TRIANGLES, 0, 6);
                     }
                 }
@@ -683,7 +715,7 @@ fn main() {
                     unsafe {
                         gl::UseProgram(shader_program);
                         gl::UniformMatrix4fv(
-                            gl::GetUniformLocation(shader_program, proj_cstr.as_ptr()),
+                            gl::GetUniformLocation(shader_program, projection_uniform.as_ptr()),
                             1,
                             gl::FALSE,
                             new_projection.as_ptr(),
@@ -714,3 +746,4 @@ fn main() {
         }
     });
 }
+
